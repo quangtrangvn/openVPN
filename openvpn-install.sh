@@ -384,7 +384,7 @@ function installQuestions() {
 	echo "Do you want to customize encryption settings?"
 	echo "Unless you know what you're doing, you should stick with the default parameters provided by the script."
 	echo "Note that whatever you choose, all the choices presented in the script are safe. (Unlike OpenVPN's defaults)"
-	echo "See https://github.com/angristan/openvpn-install#security-and-encryption to learn more."
+	echo "See https://github.com/quangtrangvn/openVPN#security-and-encryption to learn more."
 	echo ""
 	until [[ $CUSTOMIZE_ENC =~ (y|n) ]]; do
 		read -rp "Customize encryption settings? [y/n]: " -e -i n CUSTOMIZE_ENC
@@ -899,7 +899,8 @@ tls-version-min 1.2
 tls-cipher $CC_CIPHER
 client-config-dir /etc/openvpn/ccd
 status /var/log/openvpn/status.log
-verb 3" >>/etc/openvpn/server.conf
+verb 3
+duplicate-cn" >>/etc/openvpn/server.conf
 
 	# Create client-config-dir dir
 	mkdir -p /etc/openvpn/ccd

@@ -24,7 +24,7 @@
      ```bash
      sudo ./openvpn-install.sh
      ```
-   Script Allow multiple clients (kết nối đồng thời), nếu muốn set 1 giấy phép chỉ cho  phép 1 khách hàng duy nhất bạn bỏ xóa bỏ code "duplicate-cn" >> /etc/openvpn/server.conf
+   Script Allow multiple clients (kết nối đồng thời), nếu muốn set 1 giấy phép chỉ cho  phép 1 khách hàng duy nhất bạn xóa bỏ code "duplicate-cn" >> /etc/openvpn/server.conf
    khởi động lại dịch vụ:
    - **Lệnh**:
      ```bash

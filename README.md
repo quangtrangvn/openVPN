@@ -13,13 +13,13 @@
      ```
      ```bash
      curl -O https://raw.githubusercontent.com/quangtrangvn/openVPN/main/openvpn-install.sh
-     ``
-   Cấp quyền thực thi cho Script:
+     ```
+` Cấp quyền thực thi cho Script:
     - **Lệnh**:
      ```bash
      chmod +x openvpn-install.sh
      ```
-   Chạy Script:
+` Chạy Script:
    - **Lệnh**:
      ```bash
      sudo ./openvpn-install.sh

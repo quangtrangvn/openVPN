@@ -304,7 +304,7 @@ function installQuestions() {
 		IP=$(ip -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1)
 	fi
 	APPROVE_IP=${APPROVE_IP:-n}
-	if [[ $APPROVE_IP =~ n ]]; do
+	if [[ $APPROVE_IP =~ n ]]; then
 		read -rp "IP address: " -e -i "$IP" IP
 	fi
 	# If $IP is a private IP address, the server must be behind NAT
@@ -425,23 +425,6 @@ function installQuestions() {
 			done
 		fi
 	done
-	echo ""
-	echo "Do you want to allow multiple simultaneous client connections?"
-	echo "   1) Yes (Multiple devices/users can use same account) - RECOMMENDED"
-	echo "   2) No (Only ONE device can use the account at a time)"
-	until [[ $MULTI_CLIENT =~ ^[1-2]$ ]]; do
-		read -rp "Allow multiple clients? [1-2]: " -e -i 1 MULTI_CLIENT
-	done
-	case $MULTI_CLIENT in
-	1)
-		ALLOW_DUPLICATE_CN="y"
-		log_info "Multiple simultaneous connections ALLOWED"
-		;;
-	2)
-		ALLOW_DUPLICATE_CN="n"
-		log_warn "Only 1 simultaneous connection ALLOWED"
-		;;
-	esac
 	echo ""
 	echo "Do you want to use compression? It is not recommended since the VORACLE attack makes use of it."
 	until [[ $COMPRESSION_ENABLED =~ (y|n) ]]; do
@@ -692,7 +675,7 @@ function installQuestions() {
 	echo -e "${GREEN}Okay, that was all I needed. We are ready to setup your OpenVPN server now.${NC}"
 	echo "You will be able to generate a client at the end of the installation."
 	APPROVE_INSTALL=${APPROVE_INSTALL:-n}
-	if [[ $APPROVE_INSTALL =~ n ]]; do
+	if [[ $APPROVE_INSTALL =~ n ]]; then
 		read -n1 -r -p "Press any key to continue..."
 	fi
 }
@@ -730,7 +713,7 @@ function installOpenVPN() {
 
 	# Get the "public" interface from the default route
 	NIC=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
-	if [[ -z $NIC ]] && [[ $IPV6_SUPPORT == 'y' ]]; do
+	if [[ -z $NIC ]] && [[ $IPV6_SUPPORT == 'y' ]]; then
 		NIC=$(ip -6 route show default | sed -ne 's/^default .* dev \([^ ]*\) .*$/\1/p')
 	fi
 
@@ -742,19 +725,19 @@ function installOpenVPN() {
 		until [[ $CONTINUE =~ (y|n) ]]; do
 			read -rp "Continue? [y/n]: " -e CONTINUE
 		done
-		if [[ $CONTINUE == "n" ]]; do
+		if [[ $CONTINUE == "n" ]]; then
 			exit 1
 		fi
 	fi
 
 	# If OpenVPN isn't installed yet, install it
-	if [[ ! -e /etc/openvpn/server.conf ]]; do
+	if [[ ! -e /etc/openvpn/server.conf ]]; then
 		log_info "Installing OpenVPN..."
-		if [[ $OS =~ (debian|ubuntu) ]]; do
+		if [[ $OS =~ (debian|ubuntu) ]]; then
 			apt-get update
 			apt-get -y install ca-certificates gnupg
 			# We add the OpenVPN repo to get the latest version.
-			if [[ $VERSION_ID == "16.04" ]]; do
+			if [[ $VERSION_ID == "16.04" ]]; then
 				echo "deb http://build.openvpn.net/debian/openvpn/stable xenial main" >/etc/apt/sources.list.d/openvpn-aptly.list
 			else
 				echo "deb http://build.openvpn.net/debian/openvpn/stable $(lsb_release -sc) main" >/etc/apt/sources.list.d/openvpn-aptly.list
@@ -762,23 +745,23 @@ function installOpenVPN() {
 			wget -O - https://swupdate.openvpn.net/repos/repo-public.gpg | apt-key add -
 			apt-get update
 			apt-get install -y openvpn
-		elif [[ $OS == "ubuntu" ]]; do
+		elif [[ $OS == "ubuntu" ]]; then
 			apt-get update
 			apt-get -y install ca-certificates gnupg
 			echo "deb http://build.openvpn.net/debian/openvpn/stable $(lsb_release -sc) main" >/etc/apt/sources.list.d/openvpn-aptly.list
 			wget -O - https://swupdate.openvpn.net/repos/repo-public.gpg | apt-key add -
 			apt-get update
 			apt-get install -y openvpn
-		elif [[ $OS =~ (fedora|centos|amzn|oracle) ]]; do
+		elif [[ $OS =~ (fedora|centos|amzn|oracle) ]]; then
 			yum install -y openvpn
-		elif [[ $OS == "arch" ]]; do
+		elif [[ $OS == "arch" ]]; then
 			pacman -Syu --noconfirm openvpn
 		fi
 		log_success "OpenVPN installed"
 	fi
 
 	# If easy-rsa isn't already installed, install it
-	if [[ ! -d /etc/openvpn/easy-rsa/ ]]; do
+	if [[ ! -d /etc/openvpn/easy-rsa/ ]]; then
 		log_info "Installing easy-rsa..."
 		local EASYRSA_URL="https://github.com/OpenVPN/easy-rsa/releases/download/v3.1.2/EasyRSA-3.1.2.tgz"
 		mkdir -p /etc/openvpn/easy-rsa/
@@ -826,7 +809,7 @@ function installOpenVPN() {
 	esac
 
 	# Diffie-Hellman
-	if [[ $DH_TYPE == "2" ]]; do
+	if [[ $DH_TYPE == "2" ]]; then
 		log_info "Generating Diffie-Hellman key (this may take a while)..."
 		openssl dhparam -out /etc/openvpn/server/dh.pem "$DH_KEY_SIZE"
 	fi
@@ -849,10 +832,10 @@ cert /etc/openvpn/server/server.crt
 key /etc/openvpn/server/server.key
 EOF
 
-	if [[ $DH_TYPE == "1" ]]; do
+	if [[ $DH_TYPE == "1" ]]; then
 		echo "dh none" >> /etc/openvpn/server.conf
 		echo "ecdh-curve $DH_CURVE" >> /etc/openvpn/server.conf
-	elif [[ $DH_TYPE == "2" ]]; do
+	elif [[ $DH_TYPE == "2" ]]; then
 		echo "dh /etc/openvpn/server/dh.pem" >> /etc/openvpn/server.conf
 	fi
 
@@ -861,7 +844,7 @@ topology subnet
 server 10.8.0.0 255.255.255.0
 EOF
 
-	if [[ $IPV6_SUPPORT == 'y' ]]; do
+	if [[ $IPV6_SUPPORT == 'y' ]]; then
 		echo "server-ipv6 fd42:42:42:42::/112" >> /etc/openvpn/server.conf
 	fi
 
@@ -871,7 +854,7 @@ ifconfig-pool-persist ipp.txt
 push "redirect-gateway def1 bypass-dhcp"
 EOF
 
-	if [[ $IPV6_SUPPORT == 'y' ]]; do
+	if [[ $IPV6_SUPPORT == 'y' ]]; then
 		echo 'push "redirect-gateway def1 ipv6 bypass-dhcp"' >> /etc/openvpn/server.conf
 	fi
 
@@ -880,7 +863,7 @@ EOF
 	1)
 		# System DNS - get from /etc/resolv.conf
 		while IFS= read -r line; do
-			if [[ $line =~ ^nameserver ]]; do
+			if [[ $line =~ ^nameserver ]]; then
 				echo "push \"dhcp-option DNS ${line#nameserver }\"" >> /etc/openvpn/server.conf
 			fi
 		done < /etc/resolv.conf
@@ -935,7 +918,7 @@ EOF
 		;;
 	14)
 		echo "push \"dhcp-option DNS $DNS1\"" >> /etc/openvpn/server.conf
-		if [[ -n $DNS2 ]]; do
+		if [[ -n $DNS2 ]]; then
 			echo "push \"dhcp-option DNS $DNS2\"" >> /etc/openvpn/server.conf
 		fi
 		;;
@@ -976,18 +959,10 @@ persist-tun
 log-append /var/log/openvpn/server.log
 verb 3
 client-to-client
+duplicate-cn
 EOF
 
-	# Add duplicate-cn option based on user choice
-	if [[ $ALLOW_DUPLICATE_CN == "y" ]]; then
-		echo "# Allow multiple simultaneous client connections" >> /etc/openvpn/server.conf
-		echo "duplicate-cn" >> /etc/openvpn/server.conf
-	else
-		echo "# Only one simultaneous client connection per certificate" >> /etc/openvpn/server.conf
-		echo "# duplicate-cn option is disabled" >> /etc/openvpn/server.conf
-	fi
-
-	if [[ $COMPRESSION_ENABLED == "y" ]]; do
+	if [[ $COMPRESSION_ENABLED == "y" ]]; then
 		echo "compress $COMPRESSION_ALG" >> /etc/openvpn/server.conf
 		echo "push \"compress $COMPRESSION_ALG\"" >> /etc/openvpn/server.conf
 	fi
@@ -999,7 +974,7 @@ EOF
 	systemctl start openvpn-server@server.service
 
 	# Check if it's running
-	if systemctl is-active --quiet openvpn-server@server.service; do
+	if systemctl is-active --quiet openvpn-server@server.service; then
 		log_success "OpenVPN server is running"
 	else
 		log_error "OpenVPN server failed to start. Check logs with: journalctl -u openvpn-server@server -n 50"
@@ -1042,7 +1017,7 @@ remote-cert-tls server
 block-outside-dns
 EOF
 
-	if [[ $COMPRESSION_ENABLED == "y" ]]; do
+	if [[ $COMPRESSION_ENABLED == "y" ]]; then
 		echo "compress $COMPRESSION_ALG" >> /etc/openvpn/client.ovpn
 	fi
 
@@ -1068,7 +1043,7 @@ remote-cert-tls server
 block-outside-dns
 EOF
 
-	if [[ $COMPRESSION_ENABLED == "y" ]]; do
+	if [[ $COMPRESSION_ENABLED == "y" ]]; then
 		echo "compress $COMPRESSION_ALG" >> /etc/openvpn/${CLIENT}.ovpn
 	fi
 
@@ -1114,10 +1089,10 @@ EOF
 
 	# Firewall
 	log_info "Configuring firewall..."
-	if command -v ufw &> /dev/null; do
+	if command -v ufw &> /dev/null; then
 		ufw allow "OpenVPN"
 		ufw allow $PORT/$PROTOCOL
-	elif command -v firewall-cmd &> /dev/null; do
+	elif command -v firewall-cmd &> /dev/null; then
 		firewall-cmd --permanent --add-service=openvpn
 		firewall-cmd --permanent --add-port=$PORT/$PROTOCOL
 		firewall-cmd --reload
@@ -1127,7 +1102,7 @@ EOF
 	sysctl -w net.ipv4.ip_forward=1 > /dev/null
 	echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 
-	if [[ $IPV6_SUPPORT == 'y' ]]; do
+	if [[ $IPV6_SUPPORT == 'y' ]]; then
 		sysctl -w net.ipv6.conf.all.forwarding=1 > /dev/null
 		echo "net.ipv6.conf.all.forwarding=1" >> /etc/sysctl.conf
 	fi
@@ -1148,18 +1123,6 @@ EOF
 	echo "2. Import it into OpenVPN Connect, Tunnelblick, or your VPN app"
 	echo "3. Check OpenVPN status: ${BLUE}systemctl status openvpn-server@server${NC}"
 	echo "4. View logs: ${BLUE}journalctl -u openvpn-server@server -f${NC}"
-	echo ""
-	
-	# Show multi-client info
-	if [[ $ALLOW_DUPLICATE_CN == "y" ]]; then
-		echo -e "${GREEN}✓ Multiple simultaneous connections: ALLOWED${NC}"
-		echo "  → Multiple devices/users can use the same client certificate"
-		echo "  → This certificate can be shared with multiple people"
-	else
-		echo -e "${YELLOW}⚠ Multiple simultaneous connections: DISABLED${NC}"
-		echo "  → Only ONE device can use this certificate at a time"
-		echo "  → If you need multiple devices, create separate client certificates"
-	fi
 	echo ""
 	echo -e "${YELLOW}Useful commands:${NC}"
 	echo "• Start server: systemctl start openvpn-server@server"

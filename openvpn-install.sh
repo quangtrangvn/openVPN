@@ -98,14 +98,21 @@ install_packages(){
 
 detect_layout(){
   if [ "$INIT_SYSTEM" = systemd ]; then
-    mkdir -p /etc/openvpn/server
-    SERVER_CONF=/etc/openvpn/server/server.conf
-    local units=(openvpn-server@server.service openvpn@server.service openvpn.service)
-    local unit
-    for unit in "${units[@]}"; do
-      if systemctl list-unit-files "$unit" --no-legend 2>/dev/null | grep -q .; then SERVICE_UNIT=$unit; break; fi
-    done
-    [ -n "$SERVICE_UNIT" ] || die "No supported OpenVPN systemd unit was installed."
+    if systemctl cat openvpn-server@.service >/dev/null 2>&1; then
+      mkdir -p /etc/openvpn/server
+      SERVER_CONF=/etc/openvpn/server/server.conf
+      SERVICE_UNIT=openvpn-server@server.service
+    elif systemctl cat openvpn@.service >/dev/null 2>&1; then
+      mkdir -p /etc/openvpn
+      SERVER_CONF=/etc/openvpn/server.conf
+      SERVICE_UNIT=openvpn@server.service
+    elif systemctl cat openvpn.service >/dev/null 2>&1; then
+      mkdir -p /etc/openvpn
+      SERVER_CONF=/etc/openvpn/openvpn.conf
+      SERVICE_UNIT=openvpn.service
+    else
+      die "No supported OpenVPN systemd unit was installed."
+    fi
   else
     mkdir -p /etc/openvpn
     SERVER_CONF=/etc/openvpn/openvpn.conf

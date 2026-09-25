@@ -1,0 +1,12 @@
+# Never commit VPN credentials or generated PKI
+*.ovpn
+*.key
+*.crt
+*.pem
+pki/
+easy-rsa/
+
+# Runtime state and logs
+state.env
+baseline/
+*.log

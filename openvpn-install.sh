@@ -276,7 +276,9 @@ configure_forwarding(){
 # Managed by $APP_NAME
 net.ipv4.ip_forward=1
 EOF
-  sysctl --system >/dev/null
+  # Apply only the installer-owned key. Loading every sysctl file can emit
+  # unrelated platform warnings such as accept_source_route/promote_secondaries.
+  sysctl -w net.ipv4.ip_forward=1 >/dev/null
   [ "$(sysctl -n net.ipv4.ip_forward)" = 1 ] || die "IPv4 forwarding could not be enabled."
 }
 
@@ -419,6 +421,26 @@ EOF
   chmod 600 "$STATE_FILE"
 }
 
+wait_for_openvpn_ready(){
+  local elapsed=0
+  while [ "$elapsed" -lt 30 ]; do
+    if ss -H -lunp 2>/dev/null | awk -v port=":$PORT" '$5 ~ (port "$") { found=1 } END { exit !found }' \
+      && ip link show tun0 >/dev/null 2>&1; then
+      return 0
+    fi
+    if [ "$INIT_SYSTEM" = systemd ] && ! systemctl is-active --quiet "$SERVICE_UNIT"; then
+      journalctl -u "$SERVICE_UNIT" -n 80 --no-pager
+      die "OpenVPN service stopped before becoming ready."
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  [ "$INIT_SYSTEM" != systemd ] || journalctl -u "$SERVICE_UNIT" -n 80 --no-pager
+  ss -lunp || true
+  ip link show tun0 2>/dev/null || true
+  die "OpenVPN did not expose $PROTOCOL/$PORT and tun0 within 30 seconds."
+}
+
 start_openvpn(){
   if [ "$INIT_SYSTEM" = systemd ]; then
     systemctl enable "$SERVICE_UNIT"
@@ -429,8 +451,7 @@ start_openvpn(){
     rc-service openvpn restart
     rc-service openvpn status >/dev/null || die "OpenVPN OpenRC service failed."
   fi
-  ss -lnup | grep -q ":$PORT " || die "OpenVPN is active but $PROTOCOL port $PORT is not listening."
-  ip link show tun0 >/dev/null 2>&1 || die "OpenVPN service is active but tun0 is missing."
+  wait_for_openvpn_ready
 }
 
 install_main(){

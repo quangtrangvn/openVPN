@@ -27,7 +27,7 @@ PORT=${PORT:-1194}
 PROTOCOL=${PROTOCOL:-udp}
 DNS1=${DNS1:-1.1.1.1}
 DNS2=${DNS2:-1.0.0.1}
-ACTION=${1:-install}
+ACTION=${1:-}
 LOG_FILE=/var/log/openvpn-installer.log
 PKG_LOCK_TIMEOUT=${PKG_LOCK_TIMEOUT:-600}
 PKG_LOCK_POLL=${PKG_LOCK_POLL:-5}
@@ -39,6 +39,51 @@ trap 'on_error $LINENO' ERR
 
 require_root(){ [ "$EUID" -eq 0 ] || die "Run this installer as root."; }
 require_tun(){ [ -c /dev/net/tun ] || die "/dev/net/tun is unavailable. Enable TUN at the provider first."; }
+
+interactive_menu(){
+  local choice value
+  printf '\nOpenVPN - cai dat va quan ly client\n'
+  if [ -f "$STATE_FILE" ]; then
+    printf '1) Tao them file client (giu nguyen server)\n2) Kiem tra server\n3) Sua lai cau hinh (repair)\n4) Thoat\n'
+    read -r -p 'Chon [1-4]: ' choice
+    case "$choice" in
+      1) ACTION=client ;;
+      2) ACTION=status ;;
+      3) ACTION=repair ;;
+      *) exit 0 ;;
+    esac
+  else
+    printf '1) Cai OpenVPN va tao client\n2) Thoat\n'
+    read -r -p 'Chon [1-2]: ' choice
+    [ "$choice" = 1 ] || exit 0
+    ACTION=install
+    read -r -p 'IP public hoac ten mien (Enter = tu nhan dien): ' value
+    [ -z "$value" ] || ENDPOINT=$value
+    read -r -p 'Cong OpenVPN [1194]: ' value
+    [ -z "$value" ] || PORT=$value
+    read -r -p 'Giao thuc UDP/TCP [udp]: ' value
+    [ -z "$value" ] || PROTOCOL=${value,,}
+  fi
+  if [ "$ACTION" = install ] || [ "$ACTION" = client ]; then
+    if [ "$ACTION" = client ]; then
+      read -r -p 'Ten client moi (vi du: phone): ' value
+      [ -n "$value" ] || { printf 'Can nhap ten client moi.\n'; exit 1; }
+    else
+      read -r -p 'Ten client [client]: ' value
+    fi
+    [ -z "$value" ] || CLIENT_NAME=$value
+  fi
+}
+
+validate_input(){
+  [[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1 && PORT <= 65535 )) || die 'Port must be 1-65535.'
+  [[ "$PROTOCOL" = udp || "$PROTOCOL" = tcp ]] || die 'Protocol must be udp or tcp.'
+  [[ "$CLIENT_NAME" =~ ^[a-zA-Z][a-zA-Z0-9_-]{0,49}$ ]] || die 'Client name must start with a letter and contain only letters, digits, _ or -.'
+  [[ "$DNS1" =~ ^[0-9.]+$ && "$DNS2" =~ ^[0-9.]+$ ]] || die 'DNS must be IPv4 addresses.'
+  if [ -n "${ENDPOINT:-}" ]; then
+    [[ "$ENDPOINT" =~ ^[a-zA-Z0-9.-]+$ ]] || die 'Endpoint must be an IPv4 address or DNS hostname.'
+  fi
+}
 
 OS_ID= OS_LIKE= OS_VERSION= OS_FAMILY= PKG_MGR= INIT_SYSTEM= OUT_IF= PUBLIC_ENDPOINT=
 SERVER_CONF= SERVICE_UNIT= EASYRSA_BIN= FW_BACKEND= GROUP_NAME= PREV_IPV4_FORWARD=0
@@ -253,11 +298,11 @@ push "redirect-gateway def1 bypass-dhcp"
 push "dhcp-option DNS $DNS1"
 push "dhcp-option DNS $DNS2"
 keepalive 10 120
-explicit-exit-notify 1
 status /var/log/openvpn-status.log
 log-append /var/log/openvpn-server.log
 verb 3
 EOF
+  if [ "$PROTOCOL" = udp ]; then printf '%s\n' 'explicit-exit-notify 1' >> "$SERVER_CONF"; fi
   # Remove an option unsupported by server mode; retained here only if a downstream package requires it.
   sed -i '/^server-cert-not-required$/d' "$SERVER_CONF"
 }
@@ -271,7 +316,7 @@ verify_assets(){
 }
 
 configure_forwarding(){
-  PREV_IPV4_FORWARD=$(sysctl -n net.ipv4.ip_forward)
+  if [ "$ACTION" != repair ]; then PREV_IPV4_FORWARD=$(sysctl -n net.ipv4.ip_forward); fi
   cat > /etc/sysctl.d/99-openvpn-installer.conf <<EOF
 # Managed by $APP_NAME
 net.ipv4.ip_forward=1
@@ -424,7 +469,7 @@ EOF
 wait_for_openvpn_ready(){
   local elapsed=0
   while [ "$elapsed" -lt 30 ]; do
-    if ss -H -lunp 2>/dev/null | awk -v port=":$PORT" '$5 ~ (port "$") { found=1 } END { exit !found }' \
+    if { if [ "$PROTOCOL" = tcp ]; then ss -H -ltn; else ss -H -lun; fi; } 2>/dev/null | awk -v port=":$PORT" '$5 ~ (port "$") { found=1 } END { exit !found }' \
       && ip link show tun0 >/dev/null 2>&1; then
       return 0
     fi
@@ -455,11 +500,60 @@ start_openvpn(){
 }
 
 install_main(){
+  if [ "$ACTION" = install ] && [ -f "$STATE_FILE" ]; then
+    die 'An installation already exists. Use the menu or repair to preserve its settings.'
+  fi
+  if [ "$ACTION" = repair ]; then
+    [ -r "$STATE_FILE" ] || die 'No installer state found. Use install for a new server.'
+    . "$STATE_FILE"
+    if [ -z "${ENDPOINT:-}" ] && [ -r "/root/$CLIENT_NAME.ovpn" ]; then
+      ENDPOINT=$(awk '$1=="remote" {print $2; exit}' "/root/$CLIENT_NAME.ovpn")
+    fi
+    [ -n "${ENDPOINT:-}" ] || die 'Cannot determine server endpoint. Set ENDPOINT before repair.'
+    [ -r "$SERVER_CONF" ] || die 'Server config missing. Stop and inspect the installation.'
+    DNS1=$(awk '$1=="push" && $2=="\"dhcp-option" && $3=="DNS" {gsub(/"/, "", $4); print $4; exit}' "$SERVER_CONF")
+    DNS2=$(awk '$1=="push" && $2=="\"dhcp-option" && $3=="DNS" {gsub(/"/, "", $4); if (++n == 2) {print $4; exit}}' "$SERVER_CONF")
+    [ -n "$DNS1" ] && [ -n "$DNS2" ] || die 'Cannot determine the existing DNS settings.'
+    validate_input
+  fi
   require_root; require_tun; detect_os; detect_package_manager; detect_init_system; detect_network
   mkdir -p "$STATE_DIR"; capture_baseline; install_packages; detect_layout; locate_easyrsa
   build_pki; write_server_config; verify_assets; configure_forwarding; detect_firewall; write_firewall_scripts
   save_state; start_openvpn; write_client
   log INFO "Installation verified: $SERVICE_UNIT active, $PROTOCOL/$PORT listening, tun0 present."
+}
+
+status_main(){
+  require_root
+  [ -r "$STATE_FILE" ] || die 'No installer state found.'
+  . "$STATE_FILE"
+  if [ "$INIT_SYSTEM" = systemd ]; then
+    systemctl is-active --quiet "$SERVICE_UNIT" || die 'OpenVPN service is inactive.'
+  else
+    rc-service openvpn status >/dev/null || die 'OpenVPN service is inactive.'
+  fi
+  wait_for_openvpn_ready
+  log INFO "OpenVPN is running: $SERVICE_UNIT, $PROTOCOL/$PORT, tun0 present."
+}
+
+client_main(){
+  require_root
+  [ -r "$STATE_FILE" ] || die 'Install OpenVPN first.'
+  local requested_client=$CLIENT_NAME
+  . "$STATE_FILE"
+  PUBLIC_ENDPOINT=${ENDPOINT:-}
+  if [ -z "$PUBLIC_ENDPOINT" ] && [ -r "/root/$CLIENT_NAME.ovpn" ]; then
+    PUBLIC_ENDPOINT=$(awk '$1=="remote" {print $2; exit}' "/root/$CLIENT_NAME.ovpn")
+  fi
+  [ -n "$PUBLIC_ENDPOINT" ] || die 'Cannot determine server endpoint. Set ENDPOINT to its public IP or hostname.'
+  CLIENT_NAME=$requested_client
+  validate_input
+  locate_easyrsa
+  [ -s "$PKI_DIR/ca.crt" ] && [ -s "$PKI_DIR/issued/server.crt" ] || die 'Existing PKI is incomplete.'
+  [ ! -e "/root/$CLIENT_NAME.ovpn" ] || die 'Client profile already exists. Choose another name.'
+  [ ! -e "$PKI_DIR/issued/$CLIENT_NAME.crt" ] || die 'Client certificate already exists. Choose another name.'
+  [ -f "$PKI_DIR/issued/$CLIENT_NAME.crt" ] || EASYRSA_BATCH=1 EASYRSA_PKI="$PKI_DIR" "$EASYRSA_BIN" build-client-full "$CLIENT_NAME" nopass
+  write_client
 }
 
 uninstall_main(){
@@ -489,7 +583,11 @@ uninstall_main(){
   log INFO "Removed only OpenVPN files and rules recorded by this installer. Packages were retained intentionally."
 }
 
+if [ -z "$ACTION" ]; then
+  if [ -t 0 ]; then interactive_menu; else ACTION=install; fi
+fi
+validate_input
 case $ACTION in
-  install|repair) install_main ;; uninstall) uninstall_main ;;
-  *) die "Usage: $0 [install|repair|uninstall]" ;;
+  install|repair) install_main ;; client) client_main ;; status) status_main ;; uninstall) uninstall_main ;;
+  *) die "Usage: $0 [install|repair|client|status|uninstall]" ;;
 esac

@@ -469,7 +469,7 @@ EOF
 wait_for_openvpn_ready(){
   local elapsed=0
   while [ "$elapsed" -lt 30 ]; do
-    if { if [ "$PROTOCOL" = tcp ]; then ss -H -ltn; else ss -H -lun; fi; } 2>/dev/null | awk -v port=":$PORT" '$5 ~ (port "$") { found=1 } END { exit !found }' \
+    if { if [ "$PROTOCOL" = tcp ]; then ss -H -ltn; else ss -H -lun; fi; } 2>/dev/null | awk -v port=":$PORT" '$4 ~ (port "$") { found=1 } END { exit !found }' \
       && ip link show tun0 >/dev/null 2>&1; then
       return 0
     fi

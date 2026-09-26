@@ -302,7 +302,7 @@ status /var/log/openvpn-status.log
 log-append /var/log/openvpn-server.log
 verb 3
 EOF
-  if [ "$PROTOCOL" = udp ]; then printf '%s\n' 'explicit-exit-notify 1' >> "$SERVER_CONF"; fi
+  if [ "$PROTOCOL" = udp ]; then sed -i '/^keepalive 10 120$/a explicit-exit-notify 1' "$SERVER_CONF"; fi
   # Remove an option unsupported by server mode; retained here only if a downstream package requires it.
   sed -i '/^server-cert-not-required$/d' "$SERVER_CONF"
 }

@@ -26,7 +26,18 @@ bash -n openvpn-install.sh
 sudo bash openvpn-install.sh
 ```
 
-Script hiện menu. Nếu đây là VPS chưa cài, chọn **1) Cài OpenVPN**. Bạn có thể nhấn Enter để dùng mặc định: UDP, cổng 1194, tên client `client`. Nếu VPS sau NAT, nhập IP public hoặc tên miền khi script hỏi. Nếu đã cài bằng script này, menu có mục **Tạo thêm file client**, **Kiểm tra server**, và **Repair**. Chỉ dùng Repair khi đã xác định lỗi; Repair sẽ khởi động lại OpenVPN và ngắt client đang kết nối trong chốc lát.
+Script hiện menu. Nếu đây là VPS chưa cài, chọn **1) Cài OpenVPN** rồi trả lời lần lượt:
+
+1. IP public hoặc tên miền: nhấn Enter để tự nhận diện; nếu VPS nằm sau NAT, **nhập IP public/tên miền** mà thiết bị bên ngoài truy cập được.
+2. Cổng: `1` = 1194, `2` = tự nhập, `3` = chọn ngẫu nhiên từ 49152 đến 65535.
+3. Giao thức: `1` = UDP, `2` = TCP. Mở **đúng cổng và giao thức** đó ở firewall của nhà cung cấp VPS.
+4. DNS: `1` = Cloudflare, `2` = Google, `3` = Quad9, `4` = AdGuard, `5` = nhập hai địa chỉ IPv4 khác.
+5. Dùng cùng một profile trên nhiều thiết bị đồng thời: `1` = không (mỗi thiết bị dùng một profile riêng, khuyên dùng); `2` = có (`duplicate-cn`).
+6. Tên client: nhấn Enter dùng `client`, hoặc nhập tên riêng. Kiểm tra phần tóm tắt và gõ `y` để bắt đầu cài.
+
+Script hiện chỉ thiết lập VPN IPv4. Compression và thay đổi loại chứng chỉ/thuật toán mã hóa chưa có trong menu; script dùng các giá trị bảo mật mặc định đã cấu hình trong mã. Không giả định mọi lựa chọn của bản 2024 đã có trong bản này.
+
+Nếu đã cài bằng script này, menu có mục **Tạo thêm file client**, **Kiểm tra server**, và **Repair**. Chỉ dùng Repair khi đã xác định lỗi; Repair sẽ khởi động lại OpenVPN và ngắt client đang kết nối trong chốc lát. Repair giữ tùy chọn DNS và `duplicate-cn` theo cấu hình đang chạy.
 
 Không chạy script 2024 trên `spx` đang dùng PKI/cấu hình của bản mới: hai bản quản lý file khác nhau. Bản gốc năm 2024 vẫn nằm trong lịch sử Git để tham khảo hoặc thử trên VPS trống.
 

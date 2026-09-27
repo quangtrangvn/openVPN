@@ -27,6 +27,7 @@ PORT=${PORT:-1194}
 PROTOCOL=${PROTOCOL:-udp}
 DNS1=${DNS1:-1.1.1.1}
 DNS2=${DNS2:-1.0.0.1}
+DUPLICATE_CN=${DUPLICATE_CN:-0}
 ACTION=${1:-}
 LOG_FILE=/var/log/openvpn-installer.log
 PKG_LOCK_TIMEOUT=${PKG_LOCK_TIMEOUT:-600}
@@ -42,7 +43,7 @@ require_tun(){ [ -c /dev/net/tun ] || die "/dev/net/tun is unavailable. Enable T
 
 interactive_menu(){
   local choice value
-  printf '\nOpenVPN - cai dat va quan ly client\n'
+  printf '\nOpenVPN - cài đặt và quản lý client\n'
   if [ -f "$STATE_FILE" ]; then
     printf '1) Tao them file client (giu nguyen server)\n2) Kiem tra server\n3) Sua lai cau hinh (repair)\n4) Thoat\n'
     read -r -p 'Chon [1-4]: ' choice
@@ -53,16 +54,51 @@ interactive_menu(){
       *) exit 0 ;;
     esac
   else
-    printf '1) Cai OpenVPN va tao client\n2) Thoat\n'
-    read -r -p 'Chon [1-2]: ' choice
+    printf '1) Cài OpenVPN và tạo client\n2) Thoát\n'
+    read -r -p 'Chọn [1-2]: ' choice
     [ "$choice" = 1 ] || exit 0
     ACTION=install
-    read -r -p 'IP public hoac ten mien (Enter = tu nhan dien): ' value
+    printf '\nNhấn Enter để dùng giá trị trong ngoặc vuông. Bản này chỉ cấu hình VPN IPv4.\n'
+    read -r -p 'IP public hoặc tên miền [tự nhận diện]: ' value
     [ -z "$value" ] || ENDPOINT=$value
-    read -r -p 'Cong OpenVPN [1194]: ' value
-    [ -z "$value" ] || PORT=$value
-    read -r -p 'Giao thuc UDP/TCP [udp]: ' value
-    [ -z "$value" ] || PROTOCOL=${value,,}
+    printf 'Cổng: 1) 1194  2) Tự nhập  3) Ngẫu nhiên (49152-65535)\n'
+    while :; do
+      read -r -p 'Chọn cổng [1]: ' choice
+      case "${choice:-1}" in
+        1) PORT=1194; break ;;
+        2) read -r -p 'Nhập cổng [1-65535]: ' PORT
+           [[ "$PORT" =~ ^[0-9]+$ ]] && (( 10#$PORT >= 1 && 10#$PORT <= 65535 )) && break
+           printf 'Cổng không hợp lệ.\n' ;;
+        3) PORT=$(shuf -i 49152-65535 -n 1); printf 'Cổng được chọn: %s\n' "$PORT"; break ;;
+        *) printf 'Chỉ chọn 1, 2 hoặc 3.\n' ;;
+      esac
+    done
+    printf 'Giao thức: 1) UDP (mặc định)  2) TCP\n'
+    while :; do
+      read -r -p 'Chọn giao thức [1]: ' choice
+      case "${choice:-1}" in 1) PROTOCOL=udp; break ;; 2) PROTOCOL=tcp; break ;; *) printf 'Chỉ chọn 1 hoặc 2.\n' ;; esac
+    done
+    printf 'DNS: 1) Cloudflare  2) Google  3) Quad9  4) AdGuard  5) Tự nhập IPv4\n'
+    while :; do
+      read -r -p 'Chọn DNS [1]: ' choice
+      case "${choice:-1}" in
+        1) DNS1=1.1.1.1; DNS2=1.0.0.1; break ;;
+        2) DNS1=8.8.8.8; DNS2=8.8.4.4; break ;;
+        3) DNS1=9.9.9.9; DNS2=149.112.112.112; break ;;
+        4) DNS1=94.140.14.14; DNS2=94.140.15.15; break ;;
+        5) read -r -p 'DNS IPv4 thứ nhất: ' DNS1
+           read -r -p 'DNS IPv4 thứ hai: ' DNS2
+           if valid_ipv4 "$DNS1" && valid_ipv4 "$DNS2"; then break; fi
+           printf 'Địa chỉ DNS không hợp lệ.\n' ;;
+        *) printf 'Chỉ chọn từ 1 đến 5.\n' ;;
+      esac
+    done
+    printf 'Dùng cùng MỘT file .ovpn trên nhiều thiết bị đồng thời?\n'
+    printf '1) Không (khuyên dùng: mỗi thiết bị một file)  2) Có (duplicate-cn)\n'
+    while :; do
+      read -r -p 'Chọn [1]: ' choice
+      case "${choice:-1}" in 1) DUPLICATE_CN=0; break ;; 2) DUPLICATE_CN=1; break ;; *) printf 'Chỉ chọn 1 hoặc 2.\n' ;; esac
+    done
   fi
   if [ "$ACTION" = install ] || [ "$ACTION" = client ]; then
     if [ "$ACTION" = client ]; then
@@ -73,13 +109,29 @@ interactive_menu(){
     fi
     [ -z "$value" ] || CLIENT_NAME=$value
   fi
+  if [ "$ACTION" = install ]; then
+    validate_input
+    printf '\nSẽ cài: %s/%s, DNS %s và %s, client %s, dùng chung profile: %s.\n' "$PROTOCOL" "$PORT" "$DNS1" "$DNS2" "$CLIENT_NAME" "$DUPLICATE_CN"
+    read -r -p 'Xác nhận bắt đầu cài? [y/N]: ' choice
+    [[ "$choice" = y || "$choice" = Y ]] || exit 0
+  fi
+}
+
+valid_ipv4(){
+  local octets part
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  IFS=. read -r -a octets <<< "$1"
+  for part in "${octets[@]}"; do
+    (( ${#part} <= 3 && 10#$part <= 255 )) || return 1
+  done
 }
 
 validate_input(){
-  [[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1 && PORT <= 65535 )) || die 'Port must be 1-65535.'
+  [[ "$PORT" =~ ^[0-9]+$ ]] && (( 10#$PORT >= 1 && 10#$PORT <= 65535 )) || die 'Port must be 1-65535.'
   [[ "$PROTOCOL" = udp || "$PROTOCOL" = tcp ]] || die 'Protocol must be udp or tcp.'
   [[ "$CLIENT_NAME" =~ ^[a-zA-Z][a-zA-Z0-9_-]{0,49}$ ]] || die 'Client name must start with a letter and contain only letters, digits, _ or -.'
-  [[ "$DNS1" =~ ^[0-9.]+$ && "$DNS2" =~ ^[0-9.]+$ ]] || die 'DNS must be IPv4 addresses.'
+  valid_ipv4 "$DNS1" && valid_ipv4 "$DNS2" || die 'DNS must be valid IPv4 addresses.'
+  [[ "$DUPLICATE_CN" = 0 || "$DUPLICATE_CN" = 1 ]] || die 'DUPLICATE_CN must be 0 or 1.'
   if [ -n "${ENDPOINT:-}" ]; then
     [[ "$ENDPOINT" =~ ^[a-zA-Z0-9.-]+$ ]] || die 'Endpoint must be an IPv4 address or DNS hostname.'
   fi
@@ -303,6 +355,7 @@ log-append /var/log/openvpn-server.log
 verb 3
 EOF
   if [ "$PROTOCOL" = udp ]; then sed -i '/^keepalive 10 120$/a explicit-exit-notify 1' "$SERVER_CONF"; fi
+  if [ "$DUPLICATE_CN" = 1 ]; then printf '%s\n' 'duplicate-cn' >> "$SERVER_CONF"; fi
   # Remove an option unsupported by server mode; retained here only if a downstream package requires it.
   sed -i '/^server-cert-not-required$/d' "$SERVER_CONF"
 }
@@ -462,6 +515,7 @@ EASYRSA_PREEXISTING='$EASYRSA_PREEXISTING'
 UFW_RULE_ADDED='$UFW_RULE_ADDED'
 FIREWALLD_RULE_ADDED='$FIREWALLD_RULE_ADDED'
 CLIENT_NAME='$CLIENT_NAME'
+DUPLICATE_CN='$DUPLICATE_CN'
 EOF
   chmod 600 "$STATE_FILE"
 }
@@ -514,6 +568,7 @@ install_main(){
     DNS1=$(awk '$1=="push" && $2=="\"dhcp-option" && $3=="DNS" {gsub(/"/, "", $4); print $4; exit}' "$SERVER_CONF")
     DNS2=$(awk '$1=="push" && $2=="\"dhcp-option" && $3=="DNS" {gsub(/"/, "", $4); if (++n == 2) {print $4; exit}}' "$SERVER_CONF")
     [ -n "$DNS1" ] && [ -n "$DNS2" ] || die 'Cannot determine the existing DNS settings.'
+    if grep -Eq '^[[:space:]]*duplicate-cn([[:space:]]|$)' "$SERVER_CONF"; then DUPLICATE_CN=1; else DUPLICATE_CN=0; fi
     validate_input
   fi
   require_root; require_tun; detect_os; detect_package_manager; detect_init_system; detect_network
